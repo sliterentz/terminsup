@@ -37,16 +37,6 @@ resource "random_password" "redis_password" {
   special = false
 }
 
-resource "random_password" "jwt_secret" {
-  length  = 64
-  special = false
-}
-
-resource "random_password" "watchtower_http_api_token" {
-  length  = 128
-  special = false
-}
-
 # Create PostgreSQL init script ConfigMaps for both namespaces
 resource "kubernetes_config_map" "postgres_init_script" {
   for_each = toset(local.namespaces)

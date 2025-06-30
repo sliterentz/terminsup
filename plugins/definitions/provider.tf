@@ -11,7 +11,7 @@ terraform {
 
 variable "USE_PORTAINER" {
     type        = bool
-    default     = false
+    default     = true
     description = "Set default to true if you want to add portainer to the deployment"
 }
 
@@ -23,6 +23,6 @@ variable "USE_WATCHTOWER" {
 
 variable "USE_NGINX" {
     type        = bool
-    default     = false
+    default     = true
     description = "Set default to true if you want to add nginx to the deployment"
 }

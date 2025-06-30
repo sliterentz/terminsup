@@ -5,7 +5,6 @@ locals {
   # Database configurations
   databases = {
     postgres = {
-      postgres_host = "${var.postgres_host}"
       image = "postgres:latest"
       port = 5432
       storage_size = "2Gi"
@@ -85,14 +84,6 @@ locals {
           failure_threshold = 3
         }
       }
-    }
-  }
-  
-  config = {
-    supabase = {
-      enable_storage = "${var.supa_enable_storage}"
-      pg_meta_url = "${var.meta_url}"
-      pg_meta_port = "${var.meta_port}"
     }
   }
 }
