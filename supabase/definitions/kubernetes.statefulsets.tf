@@ -52,6 +52,12 @@ resource "kubernetes_stateful_set" "supabase-postgres" {
       ignore_changes = [metadata[0].namespace]
     }
     
+    timeouts {
+      create = "2m"
+      update = "2m"
+      delete = "2m"
+    }
+
     spec {
     service_name = "postgres"
     replicas     = 1
@@ -70,13 +76,54 @@ resource "kubernetes_stateful_set" "supabase-postgres" {
       }
 
       spec {
+        init_container {
+          name  = "postgres-init"
+          image = "busybox:1.35"
+          
+          command = [
+            "sh", "-c", 
+            "mkdir -p /var/lib/postgresql/data/pgdata && chown -R 999:999 /var/lib/postgresql/data && chmod -R 700 /var/lib/postgresql/data"
+          ]
+          
+          security_context {
+            run_as_user = 0
+          }
+          
+          volume_mount {
+            name       = "pgdata"
+            mount_path = "/var/lib/postgresql/data"
+            sub_path   = "pgdata"
+          }
+        }
+
+        init_container {
+          name  = "postgres-config-copy"
+          image = "busybox:1.35"
+          
+          command = [
+            "sh", "-c", 
+            "mkdir -p /var/lib/postgresql/data/pgdata && cp /etc/postgresql/postgresql.conf /var/lib/postgresql/data/postgresql.auto.conf && chown -R 999:999 /var/lib/postgresql/data"
+          ]
+          
+          security_context {
+            run_as_user = 0
+          }
+          
+          volume_mount {
+            name       = "pgdata"
+            mount_path = "/var/lib/postgresql/data"
+            sub_path   = "pgdata"
+          }
+          
+          volume_mount {
+            name       = "pg-config"
+            mount_path = "/etc/postgresql"
+          }
+        }
+
         container {
           name  = "postgres"
           image = docker_image.supabase-postgres.name
-
-          port {
-            container_port = var.postgres_port
-          }
 
           env {
             name  = "POSTGRES_PASSWORD"
@@ -92,17 +139,28 @@ resource "kubernetes_stateful_set" "supabase-postgres" {
           }
           env {
             name  = "PGDATA"
-            value = "/var/lib/postgresql/data"
+            value = "/var/lib/postgresql/data/pgdata"
           }
 
+          # env {
+          #   name  = "POSTGRES_HOST_AUTH_METHOD"
+          #   value = "trust"
+          # }
+
           env {
-            name  = "POSTGRES_HOST_AUTH_METHOD"
-            value = "trust"
+            name  = "POSTGRES_INITDB_ARGS"
+            value = "--auth-host=trust --auth-local=trust"
+          }
+          
+          security_context {
+            run_as_user  = 999
+            run_as_group = 999
           }
 
           volume_mount {
-            name       = "pg-data"
+            name       = "pgdata"
             mount_path = "/var/lib/postgresql/data"
+            sub_path   = "pgdata"
           }
 
           volume_mount {
@@ -113,6 +171,13 @@ resource "kubernetes_stateful_set" "supabase-postgres" {
           volume_mount {
             name       = "pg-init"
             mount_path = "/docker-entrypoint-initdb.d"
+            read_only = true
+          }
+
+          volume_mount {
+            name       = "pg-init-home"
+            mount_path = "/home/init"
+            read_only = true
           }
 
           volume_mount {
@@ -120,20 +185,40 @@ resource "kubernetes_stateful_set" "supabase-postgres" {
             mount_path = "/etc/postgresql"
           }
 
-          command = ["postgres", "-c", "config-file=/etc/postgresql/postgresql.conf"]
+          port {
+            container_port = var.postgres_port
+          }
+
+          # command = [
+          #   "docker-entrypoint.sh", "postgres"
+          # ]
 
           liveness_probe {
             exec {
               command = ["pg_isready", "-U", var.postgres_user, "-d", var.postgres_db]
             }
-            initial_delay_seconds = 30
+            initial_delay_seconds = 60
             period_seconds        = 10
+            timeout_seconds       = 5
+            failure_threshold     = 3
+          }
+          
+          readiness_probe {
+            exec {
+              command = ["pg_isready", "-U", var.postgres_user, "-d", var.postgres_db]
+            }
+            initial_delay_seconds = 30
+            period_seconds        = 5
+            timeout_seconds       = 3
+            failure_threshold     = 3
           }
         }
 
         volume {
           name = "pg-logs"
-          empty_dir {}
+          empty_dir {
+            size_limit = "1Gi"
+          }
         }
         volume {
           name = "pg-config"
@@ -147,12 +232,18 @@ resource "kubernetes_stateful_set" "supabase-postgres" {
             name = "postgres-init-scripts"  
           }
         }
+        volume {
+          name = "pg-init-home"
+          config_map {
+            name = "postgres-init-scripts"  
+          }
+        }
       }
     }
 
     volume_claim_template {
       metadata {
-        name = "pg-data"
+        name = "pgdata"
       }
       spec {
         access_modes = ["ReadWriteOnce"]
